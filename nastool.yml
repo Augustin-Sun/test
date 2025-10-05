@@ -1,0 +1,92 @@
+version: "3.8"
+
+services:
+  # 初始化目录与权限
+  init-setup:
+    image: alpine:latest
+    container_name: init-setup
+    command: >
+      sh -c "
+      mkdir -p /vol1/1000/docker/nastools &&
+      mkdir -p /vol1/1000/docker/qbittorrent &&
+      mkdir -p /vol1/1000/docker/jackett &&
+      mkdir -p /vol1/1000/media/downloads/movies &&
+      mkdir -p /vol1/1000/media/downloads/tv &&
+      mkdir -p /vol1/1000/media/movies &&
+      mkdir -p /vol1/1000/media/tv &&
+      chown -R 1000:1000 /vol1/1000
+      "
+    volumes:
+      - /vol1/1000:/vol1/1000
+    restart: "no"
+
+  # qBittorrent 下载器
+  qbittorrent:
+    image: superng6/qbittorrent
+    container_name: qbittorrent
+    hostname: qbittorrent
+    ports:
+      - 8081:8080
+      - 6881:6881
+      - 6881:6881/udp
+    volumes:
+      - /vol1/1000/docker/qbittorrent:/config
+      - /vol1/1000/media/downloads:/downloads
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+      - WEBUI_PORT=8080
+    restart: unless-stopped
+    depends_on:
+      - init-setup
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Jackett 索引器
+  jackett:
+    image: linuxserver/jackett
+    container_name: jackett
+    hostname: jackett
+    ports:
+      - 9117:9117
+    volumes:
+      - /vol1/1000/docker/jackett:/config
+      - /vol1/1000/media/downloads:/downloads
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+      - AUTO_UPDATE=true
+    restart: unless-stopped
+    depends_on:
+      - init-setup
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9117/UI/Login"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Nastool 主服务
+  nastools:
+    image: syly948/nastools:2.9.1
+    container_name: nastools
+    hostname: nastools
+    ports:
+      - 3000:3000
+    volumes:
+      - /vol1/1000/docker/nastools:/config
+      - /vol1/1000/media/downloads:/downloads
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=022
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    depends_on:
+      - init-setup
+      - qbittorrent
+      - jackett
